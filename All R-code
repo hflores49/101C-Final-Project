@@ -1,0 +1,144 @@
+
+#Uploading data
+
+H1B.train <- read.csv("TrainH1BLast.csv", header = T,  na.strings=c("","NA"))
+H1B.test <- read.csv("TestH1BLast No Y values.csv", header = T)
+attach(H1B.train)
+
+#Looking into the data
+I didn't do any data analysis in R. I based all my decisions off of looking at the varaible descriptions and playing around in excel. The commented out code is from an online paper https://github.com/mihinsumaria/H1B-Case-Status-Prediction. I figured I'd keep it here incase I need it later.
+
+# names(H1B.train)
+# 
+# library(dplyr)
+# library(ggplot2)
+# visa=H_1B_FY14_Q4
+# case.status=visa %>% filter(!is.na(STATUS)) %>% group_by(STATUS) %>% summarise(PROPORTION=round(n()*100/nrow(visa),1))
+# 
+# 
+# print(ggplot(data = case.status, aes(x = reorder(STATUS, PROPORTION), y = PROPORTION, fill = STATUS)) +geom_bar(stat = "identity") + geom_text(aes(label = paste(PROPORTION,"%")), vjust=0,hjust = 1) + labs(x = "Case Status", y = "Percent", title = "Status of petitioned applications") + scale_y_continuous(breaks = seq(0,100,10)) + coord_flip())
+# 
+# employers=visa %>% group_by(LCA_CASE_EMPLOYER_NAME) %>% summarise(count=n(),percent=round(count*100/nrow(visa),5)) %>% arrange(desc(count))
+#            
+# p=ggplot(data = employers[1:10,], aes(x = reorder(LCA_CASE_EMPLOYER_NAME, percent), y = percent, fill = LCA_CASE_EMPLOYER_NAME)) +geom_bar(stat = "identity") + geom_text(aes(label = paste(percent,"%")), vjust=0,hjust = 1) + labs(x = "Company", y = "Percent", title = "Applications per company") + scale_y_continuous(breaks = seq(0,100,10)) + coord_flip()
+# 
+# p=p+theme(legend.position = "bottom") + guides(fill=guide_legend(nrow=5,byrow=TRUE))
+# print(p)
+# 
+# jobs=visa %>% group_by(LCA_CASE_JOB_TITLE) %>% summarise(count=n(),percent=round(count*100/nrow(visa),5)) %>% arrange(desc(count))
+# 
+# p=ggplot(data = jobs[1:10,], aes(x = reorder(LCA_CASE_JOB_TITLE, percent), y = percent, fill = LCA_CASE_JOB_TITLE)) +geom_bar(stat = "identity") + geom_text(aes(label = paste(percent,"%")), vjust=0,hjust = 1) + labs(x = "Job-title", y = "Percent", title = "Jobs") + scale_y_continuous(breaks = seq(0,100,10)) + coord_flip()
+# 
+# p=p+theme(legend.position = "bottom") + guides(fill=guide_legend(nrow=5,byrow=TRUE))
+# print(p)
+# 
+# fulltimeprop=prop.table(table(visa$FULL_TIME_POS))
+# 
+# nrow(visa[which(visa$STATUS=="DENIED" | visa$STATUS=="CERTIFIED-WITHDRAWN" | visa$STATUS=="DENIED" | visa$STATUS=="WITHDRAWN" | visa$STATUS=="REJECTED" | visa$STATUS=="INVALIDATED" ),])
+```
+
+#Cleaning data
+
+H1B.cleaning <- H1B.train
+#getting rid of visa status that aren't H-1B then removing VISA_CLASS variable
+levels(H1B.cleaning$VISA_CLASS)
+H1B.cleaning <- H1B.cleaning[! H1B.cleaning$VISA_CLASS %in% c("E-3 Australian", "H-1B1 Chile", "H-1B1 Singapore"),] 
+droplevels(H1B.cleaning$VISA_CLASS)
+
+#removing redundant/full of blanks/irrelevant based on variable descriptions/factors w/ large # of levels that I don't know how to minimize
+H1B.cleaning <- H1B.cleaning[-c(1,5,8:11,13:22,23,25:32,35,36,38,39,41:49,51,52)]
+str(H1B.cleaning)
+
+#selecting observations that are complete cases (removing NA's)
+H1B.cleaning <- na.omit(H1B.cleaning)
+H1B.cleaning <- H1B.cleaning[complete.cases(H1B.cleaning),]
+
+#converting dates so they are stored as dates
+H1B.cleaning$CASE_SUBMITTED <- as.Date(H1B.cleaning$CASE_SUBMITTED, format = "%m/%d/%Y")
+H1B.cleaning$DECISION_DATE <- as.Date(H1B.cleaning$DECISION_DATE, format = "%m/%d/%Y")
+H1B.cleaning$EMPLOYMENT_START_DATE <- as.Date(H1B.cleaning$EMPLOYMENT_START_DATE, format = "%m/%d/%Y")
+H1B.cleaning$EMPLOYMENT_END_DATE <- as.Date(H1B.cleaning$EMPLOYMENT_END_DATE, format = "%m/%d/%Y")
+
+#creating new variables that measure the length it took to make a decision and  duration of employment
+H1B.cleaning$DECISION_DURATION <- (H1B.cleaning$DECISION_DATE - H1B.cleaning$CASE_SUBMITTED)
+H1B.cleaning$EMPLOYMENT_DURATION <- (H1B.cleaning$EMPLOYMENT_END_DATE - H1B.cleaning$EMPLOYMENT_START_DATE)
+
+#removing dates now that we have durations
+H1B.cleaning <- H1B.cleaning[,-(2:5)] 
+
+#creating new variables that measure the days between all the date values
+#not sure if necessary, so commented out for now.
+# H1B.cleaning$DECISION_TO_START_DURATION <- (H1B.cleaning$EMPLOYMENT_START_DATE - H1B.cleaning$DECISION_DATE)
+# H1B.cleaning$DECISION_TO_END_DURATION <- (H1B.cleaning$EMPLOYMENT_END_DATE - H1B.cleaning$DECISION_DATE)
+# H1B.cleaning$SUBMIT_TO_START_DURATION <- (H1B.cleaning$EMPLOYMENT_START_DATE - H1B.cleaning$CASE_SUBMITTED)
+# H1B.cleaning$SUBMIT_TO_END_DURATION <- (H1B.cleaning$EMPLOYMENT_END_DATE - H1B.cleaning$CASE_SUBMITTED)
+
+#converting durations into integers (not the durations that are commented out)
+H1B.cleaning$EMPLOYMENT_DURATION <- as.integer(H1B.cleaning$EMPLOYMENT_DURATION)
+H1B.cleaning$DECISION_DURATION <- as.integer(H1B.cleaning$DECISION_DURATION)
+
+#looking at # of levels in remaining variables 
+str(H1B.cleaning)
+lapply(H1B.cleaning, nlevels)
+
+#removing factor levels that are no longer used by restating each factor as a factor
+H1B.cleaning$EMPLOYER_STATE <- factor(H1B.cleaning$EMPLOYER_STATE) 
+H1B.cleaning$SOC_NAME <- factor(H1B.cleaning$SOC_NAME)
+H1B.cleaning$FULL_TIME_POSITION <- factor(H1B.cleaning$FULL_TIME_POSITION)
+H1B.cleaning$PW_SOURCE <- factor(H1B.cleaning$PW_SOURCE)
+H1B.cleaning$WORKSITE_STATE <- factor(H1B.cleaning$WORKSITE_STATE) 
+
+
+##revaluating nlevels for SOC_NAME, EMPLOYER_STATE, and WORKSITE_STATE so there are fewer levels
+#keeping SOC_NAMEs that occur more than 50 times
+sort(table(H1B.cleaning$SOC_NAME), decreasing = T) #find out top levels
+
+H1B.cleaning <- H1B.cleaning[H1B.cleaning$SOC_NAME %in% c("SOFTWARE DEVELOPERS, APPLICATIONS",	"COMPUTER SYSTEMS ANALYSTS",	"COMPUTER PROGRAMMERS",	"COMPUTER OCCUPATIONS, ALL OTHER",	"SOFTWARE DEVELOPERS, SYSTEMS SOFTWARE ",	"MANAGEMENT ANALYSTS",	"ACCOUNTANTS AND AUDITORS",	"NETWORK AND COMPUTER SYSTEMS ADMINISTRATORS",	"COMPUTER SYSTEMS ANALYST",	"MECHANICAL ENGINEERS",	"OPERATIONS RESEARCH ANALYSTS",	"FINANCIAL ANALYSTS",	"ELECTRICAL ENGINEERS",	"PHYSICIANS AND SURGEONS, ALL OTHER",	"MARKET RESEARCH ANALYSTS AND MARKETING SPECIALISTS"), ]
+
+H1B.cleaning$SOC_NAME <- factor(H1B.cleaning$SOC_NAME) #dropping levels that aren't used anymore
+
+
+#converting state levels into 7 regions 
+levels(H1B.cleaning$EMPLOYER_STATE) <- list("New England" = c("CT",	"ME",	"MA",	"NH",	"RI",	"VT"), "Mid-Atlantic" = c("DE",	"MD",	"NJ",	"NY",	"PA",	"DC"), "Midwest" = c("IL",	"IN",	"IA",	"KS",	"MI",	"MN",	"MO",	"NE",	"ND",	"OH",	"SD",	"WI"), "South" = c("AL",	"AR",	"FL",	"GA",	"KY",	"LA",	"MS",	"NC",	"SC",	"TN",	"VA",	"WV"), "Southwest" = c("AZ",	"NM",	"OK",	"TX"),  "West" = c("AK",	"CO",	"CA",	"HI",	"ID",	"MT",	"NV",	"OR",	"UT",	"WA",	"WY"), "US Territory" = c("GU",	"MP",	"PR",	"VI"))
+
+H1B.cleaning$EMPLOYER_STATE <- factor(H1B.cleaning$EMPLOYER_STATE) #dropping levels that aren't used anymore
+
+levels(H1B.cleaning$WORKSITE_STATE) <- list("New England" = c("CT",	"ME",	"MA",	"NH",	"RI",	"VT"), "Mid-Atlantic" = c("DE",	"MD",	"NJ",	"NY",	"PA",	"DC"), "Midwest" = c("IL",	"IN",	"IA",	"KS",	"MI",	"MN",	"MO",	"NE",	"ND",	"OH",	"SD",	"WI"), "South" = c("AL",	"AR",	"FL",	"GA",	"KY",	"LA",	"MS",	"NC",	"SC",	"TN",	"VA",	"WV"), "Southwest" = c("AZ",	"NM",	"OK",	"TX"),  "West" = c("AK",	"CO",	"CA",	"HI",	"ID",	"MT",	"NV",	"OR",	"UT",	"WA",	"WY"), "US Territory" = c("GU",	"MP",	"PR",	"VI"))
+
+H1B.cleaning$WORKSITE_STATE <- factor(H1B.cleaning$WORKSITE_STATE) #dropping levels that aren't used anymore
+
+str(H1B.cleaning)
+H1B.clean <- H1B.cleaning
+write.csv(H1B.clean, file = "H1B.clean.csv")
+
+
+#Seperate cleaned data into training and testing
+
+set.seed(91)
+train.index <- sample(1:nrow(H1B.clean), nrow(H1B.clean)*.90) #sampling 90% of HB1 training data
+train <- H1B.clean[train.index, ] #90% of HB1 set to train
+test.train <- H1B.clean[-train.index, ] #10% of HB1 set to test
+
+
+
+#Logistic Regression w/ backwards stepwise
+
+glm.fit <- glm(CASE_STATUS ~ ., family = "binomial", data = train)
+summary(glm.fit)
+bAIC <- step(glm.fit, direction = "backward")
+bAIC.logit.pred <- predict(bAIC.logit.model, test.train, type = "response")
+
+
+
+#Tree
+
+library(tree)
+tree.fit <- tree(CASE_STATUS ~., train)
+tree.cv <- cv.tree(tree.fit)
+tree.cv
+plot(tree.cv$size, tree.cv$dev,type='b')
+tree.prune <- prune.tree(tree.fit, best = 5)
+
+tree.pred <- predict(tree.fit, test.train)
+tree.pred
+
