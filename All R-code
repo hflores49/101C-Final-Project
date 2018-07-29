@@ -45,6 +45,11 @@ levels(H1B.cleaning$VISA_CLASS)
 H1B.cleaning <- H1B.cleaning[! H1B.cleaning$VISA_CLASS %in% c("E-3 Australian", "H-1B1 Chile", "H-1B1 Singapore"),] 
 droplevels(H1B.cleaning$VISA_CLASS)
 
+#removing data for people not on a yearly salary
+levels(H1B.cleaning$PW_UNIT_OF_PAY)
+H1B.cleaning <- H1B.cleaning[! (H1B.cleaning$PW_UNIT_OF_PAY %in% c("Bi-Weekly", "Hour", "Month", "Week")),] 
+droplevels(H1B.cleaning$PW_UNIT_OF_PAY)
+
 #removing redundant/full of blanks/irrelevant based on variable descriptions/factors w/ large # of levels that I don't know how to minimize
 H1B.cleaning <- H1B.cleaning[-c(1,5,8:11,13:22,23,25:32,35,36,38,39,41:49,51,52)]
 str(H1B.cleaning)
