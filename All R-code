@@ -1,15 +1,18 @@
 
 #Uploading data
-
+```{r}
 H1B.train <- read.csv("TrainH1BLast.csv", header = T,  na.strings=c("","NA"))
 H1B.test <- read.csv("TestH1BLast No Y values.csv", header = T)
 attach(H1B.train)
+```
 
 #Looking into the data
 I didn't do any data analysis in R. I based all my decisions off of looking at the varaible descriptions and playing around in excel. The commented out code is from an online paper https://github.com/mihinsumaria/H1B-Case-Status-Prediction. I figured I'd keep it here incase I need it later.
+```{r} 
+names(H1B.train)
 
-# names(H1B.train)
-# 
+
+
 # library(dplyr)
 # library(ggplot2)
 # visa=H_1B_FY14_Q4
@@ -38,7 +41,7 @@ I didn't do any data analysis in R. I based all my decisions off of looking at t
 ```
 
 #Cleaning data
-
+```{r}
 H1B.cleaning <- H1B.train
 #getting rid of visa status that aren't H-1B then removing VISA_CLASS variable
 levels(H1B.cleaning$VISA_CLASS)
@@ -49,6 +52,7 @@ droplevels(H1B.cleaning$VISA_CLASS)
 levels(H1B.cleaning$PW_UNIT_OF_PAY)
 H1B.cleaning <- H1B.cleaning[! (H1B.cleaning$PW_UNIT_OF_PAY %in% c("Bi-Weekly", "Hour", "Month", "Week")),] 
 droplevels(H1B.cleaning$PW_UNIT_OF_PAY)
+
 
 #removing redundant/full of blanks/irrelevant based on variable descriptions/factors w/ large # of levels that I don't know how to minimize
 H1B.cleaning <- H1B.cleaning[-c(1,5,8:11,13:22,23,25:32,35,36,38,39,41:49,51,52)]
@@ -113,28 +117,57 @@ levels(H1B.cleaning$WORKSITE_STATE) <- list("New England" = c("CT",	"ME",	"MA",	
 H1B.cleaning$WORKSITE_STATE <- factor(H1B.cleaning$WORKSITE_STATE) #dropping levels that aren't used anymore
 
 str(H1B.cleaning)
+#removing Full_Time_Position b/c it became redundant after only considering yearly salary
+H1B.cleaning <- H1B.cleaning[,-4] 
 H1B.clean <- H1B.cleaning
 write.csv(H1B.clean, file = "H1B.clean.csv")
 
+range(train$WAGE_RATE_OF_PAY_FROM)
+
+H1B.cleaning
+```
+
+#Adding new variables we created to H1B.test data
+```{r}
+#converting dates so they are stored as dates
+H1B.test$CASE_SUBMITTED <- as.Date(H1B.test$CASE_SUBMITTED, format = "%m/%d/%Y")
+H1B.test$DECISION_DATE <- as.Date(H1B.test$DECISION_DATE, format = "%m/%d/%Y")
+H1B.test$EMPLOYMENT_START_DATE <- as.Date(H1B.test$EMPLOYMENT_START_DATE, format = "%m/%d/%Y")
+H1B.test$EMPLOYMENT_END_DATE <- as.Date(H1B.test$EMPLOYMENT_END_DATE, format = "%m/%d/%Y")
+
+#creating new variables that measure the length it took to make a decision and  duration of employment
+H1B.test$DECISION_DURATION <- (H1B.test$DECISION_DATE - H1B.test$CASE_SUBMITTED)
+H1B.test$EMPLOYMENT_DURATION <- (H1B.test$EMPLOYMENT_END_DATE - H1B.test$EMPLOYMENT_START_DATE)
+
+#converting durations into integers (not the durations that are commented out)
+H1B.test$EMPLOYMENT_DURATION <- as.integer(H1B.test$EMPLOYMENT_DURATION)
+H1B.test$DECISION_DURATION <- as.integer(H1B.test$DECISION_DURATION)
+
+
+```
 
 #Seperate cleaned data into training and testing
-
+```{r}
 set.seed(91)
 train.index <- sample(1:nrow(H1B.clean), nrow(H1B.clean)*.90) #sampling 90% of HB1 training data
 train <- H1B.clean[train.index, ] #90% of HB1 set to train
 test.train <- H1B.clean[-train.index, ] #10% of HB1 set to test
 
+```
 
 
 #Logistic Regression w/ backwards stepwise
-
+```{r}
+str(train)
 glm.fit <- glm(CASE_STATUS ~ ., family = "binomial", data = train)
 summary(glm.fit)
-bAIC <- step(glm.fit, direction = "backward")
-bAIC.logit.pred <- predict(bAIC.logit.model, test.train, type = "response")
+bAIC.logit.model <- step(glm.fit, direction = "backward")
+bAIC.logit.pred <- predict(bAIC.logit.model, test.train, type = "terms")
+bAIC.logit.pred
+```
 
-
-
+#Tree
+```{r}
 #Fitting Classification Trees
 library(tree)
 
@@ -142,12 +175,12 @@ library(tree)
 dim(train)
 head(train)
 
-#TREE MODEL - ADDED BY HF ON 7/29 @ 10:40PM
+#tree model
 tree.train <-tree(CASE_STATUS~.,train) 
 summary(tree.train)
 plot(tree.train); text(tree.train,pretty=0)
 tree.train
-CASE_STATUS.TEST <- test.train$CASE_STATUS #saving CASE_STATUS values from test.train data to use later for confusion matrix
+CASE_STATUS.TEST <- test.train$CASE_STATUS
 #tree model prediction
 tree.pred <- predict(tree.train, test.train,type="class")
 table(tree.pred, CASE_STATUS.TEST)
@@ -168,4 +201,22 @@ tree.pred.kaggle <- predict(tree.train, H1B.test, type = "class")
 tree.pred.kaggle
 tree.prediction1 <- data.frame("CASE_STATUS" = tree.pred.kaggle)
 
-write.csv(tree.prediction1, file="tree.prediction1.csv") #THIS PREDICTION WAS UPLOADED TO KAGGLE W/ 87.4% ACCURACY
+write.csv(tree.prediction1, file="tree.prediction1.csv") #UPLOADED TO KAGGLE W/ 87.4% ACCURACY ON 7/29
+```
+
+#PCA
+```{r}
+install.packages("pls")
+library(pls)
+
+head(train)
+
+d.new <- d
+d.new[, 2:6] <- log(d[2:6], 2)
+d.new
+
+#log transform wage variables
+train.logt <- train
+
+train.logt[ , c(5,7)] <- log(train.log)
+```
