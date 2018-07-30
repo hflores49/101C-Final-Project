@@ -97,14 +97,34 @@ H1B.cleaning$FULL_TIME_POSITION <- factor(H1B.cleaning$FULL_TIME_POSITION)
 H1B.cleaning$PW_SOURCE <- factor(H1B.cleaning$PW_SOURCE)
 H1B.cleaning$WORKSITE_STATE <- factor(H1B.cleaning$WORKSITE_STATE) 
 
-
+WRONG
 ##revaluating nlevels for SOC_NAME, EMPLOYER_STATE, and WORKSITE_STATE so there are fewer levels
 #keeping SOC_NAMEs that occur more than 50 times
-sort(table(H1B.cleaning$SOC_NAME), decreasing = T) #find out top levels
+##sort(table(H1B.cleaning$SOC_NAME), decreasing = T) #find out top levels
 
-H1B.cleaning <- H1B.cleaning[H1B.cleaning$SOC_NAME %in% c("SOFTWARE DEVELOPERS, APPLICATIONS",	"COMPUTER SYSTEMS ANALYSTS",	"COMPUTER PROGRAMMERS",	"COMPUTER OCCUPATIONS, ALL OTHER",	"SOFTWARE DEVELOPERS, SYSTEMS SOFTWARE ",	"MANAGEMENT ANALYSTS",	"ACCOUNTANTS AND AUDITORS",	"NETWORK AND COMPUTER SYSTEMS ADMINISTRATORS",	"COMPUTER SYSTEMS ANALYST",	"MECHANICAL ENGINEERS",	"OPERATIONS RESEARCH ANALYSTS",	"FINANCIAL ANALYSTS",	"ELECTRICAL ENGINEERS",	"PHYSICIANS AND SURGEONS, ALL OTHER",	"MARKET RESEARCH ANALYSTS AND MARKETING SPECIALISTS"), ]
+##H1B.cleaning <- H1B.cleaning[H1B.cleaning$SOC_NAME %in% c("SOFTWARE DEVELOPERS, APPLICATIONS",	"COMPUTER SYSTEMS ANALYSTS",	"COMPUTER PROGRAMMERS",	"COMPUTER OCCUPATIONS, ALL OTHER",	"SOFTWARE DEVELOPERS, SYSTEMS SOFTWARE ",	"MANAGEMENT ANALYSTS",	"ACCOUNTANTS AND AUDITORS",	"NETWORK AND COMPUTER SYSTEMS ADMINISTRATORS",	"COMPUTER SYSTEMS ANALYST",	"MECHANICAL ENGINEERS",	"OPERATIONS RESEARCH ANALYSTS",	"FINANCIAL ANALYSTS",	"ELECTRICAL ENGINEERS",	"PHYSICIANS AND SURGEONS, ALL OTHER",	"MARKET RESEARCH ANALYSTS AND MARKETING SPECIALISTS"), ]
 
-H1B.cleaning$SOC_NAME <- factor(H1B.cleaning$SOC_NAME) #dropping levels that aren't used anymore
+##H1B.cleaning$SOC_NAME <- factor(H1B.cleaning$SOC_NAME) #dropping levels that aren't used anymore
+WRONG^
+
+##converting SOC_NAME to 15 levels
+#keeping all SOC_NAMES that occur more than 50 times and grouping all others as OTHER
+H1B.cleaning2 <- H1B.cleaning #duplicate cleaning data frame
+H1B.cleaning2$SOC_NAME2 <- H1B.cleaning2$SOC_NAME #duplicate variable
+table1 <- table(H1B.cleaning2$SOC_NAME2) #frequency table
+table1
+less50 <-table1 < 50 #T if less than 50
+less50
+namesless50 <- names(which(less50)) #names that are less than 50
+ind <- which(H1B.cleaning$SOC_NAME %in% namesless50) #row #'s that are less than 50
+levels(H1B.cleaning2$SOC_NAME2) <- c(levels(H1B.cleaning2$SOC_NAME2), "OTHER") #creating new level OTHER
+levels(H1B.cleaning2$SOC_NAME2)
+H1B.cleaning2$SOC_NAME2[ind] <- "OTHER" #renaming observations as OTHER
+H1B.cleaning2$SOC_NAME2 <- factor(H1B.cleaning2$SOC_NAME2) #dropping levels that aren't used anymore
+levels(H1B.cleaning2$SOC_NAME2)
+H1B.cleaning2$SOC_NAME <- H1B.cleaning2$SOC_NAME2#replace SOC_NAME with SOC_NAME2 and then delete 
+H1B.cleaning2 <- H1B.cleaning2[,-11] #delete SOC_NAME2
+H1B.cleaning <- H1B.cleaning2 #replace H1B.cleaning with H1B.cleaning2
 
 
 #converting state levels into 7 regions 
