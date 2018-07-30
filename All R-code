@@ -135,15 +135,37 @@ bAIC.logit.pred <- predict(bAIC.logit.model, test.train, type = "response")
 
 
 
-#Tree
-
+#Fitting Classification Trees
 library(tree)
-tree.fit <- tree(CASE_STATUS ~., train)
-tree.cv <- cv.tree(tree.fit)
-tree.cv
-plot(tree.cv$size, tree.cv$dev,type='b')
-tree.prune <- prune.tree(tree.fit, best = 5)
 
-tree.pred <- predict(tree.fit, test.train)
-tree.pred
 
+dim(train)
+head(train)
+
+#TREE MODEL - ADDED BY HF ON 7/29 @ 10:40PM
+tree.train <-tree(CASE_STATUS~.,train) 
+summary(tree.train)
+plot(tree.train); text(tree.train,pretty=0)
+tree.train
+CASE_STATUS.TEST <- test.train$CASE_STATUS #saving CASE_STATUS values from test.train data to use later for confusion matrix
+#tree model prediction
+tree.pred <- predict(tree.train, test.train,type="class")
+table(tree.pred, CASE_STATUS.TEST)
+# accuracy :
+(189+91)/(189+19+9+91)
+
+#tree model cross validation
+set.seed(3)
+cv.tree.train <- cv.tree(tree.train,FUN=prune.misclass)
+names(cv.tree.train)
+cv.tree.train
+
+par(mfrow=c(1,2))
+plot(cv.tree.train$size,cv.tree.train$dev,type="b")
+plot(cv.tree.train$k,cv.tree.train$dev,type="b") #doesn't look like we need to prune b/c 5 is the best 
+
+tree.pred.kaggle <- predict(tree.train, H1B.test, type = "class")
+tree.pred.kaggle
+tree.prediction1 <- data.frame("CASE_STATUS" = tree.pred.kaggle)
+
+write.csv(tree.prediction1, file="tree.prediction1.csv") #THIS PREDICTION WAS UPLOADED TO KAGGLE W/ 87.4% ACCURACY
