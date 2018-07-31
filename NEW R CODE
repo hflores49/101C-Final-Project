@@ -1,0 +1,467 @@
+
+#Uploading data
+```{r}
+H1B.train <- read.csv("TrainH1BLast.csv", header = T,  na.strings=c("","NA"))
+H1B.test <- read.csv("TestH1BLast No Y values.csv", header = T)
+```
+
+#Librarys
+```{r}
+library(dplyr)
+library(caret)
+library(ggplot2)
+library(tree)
+library(randomForest)
+library(caret)
+library(boot)
+library(MASS)
+```
+
+#Looking into the data
+I didn't do any data analysis in R. I based all my decisions off of looking at the varaible descriptions and playing around in excel. The commented out code is from an online paper https://github.com/mihinsumaria/H1B-Case-Status-Prediction. I figured I'd keep it here incase I need it later.
+```{r} 
+names(H1B.train)
+str(H1B.train)
+lapply(H1B.train, nlevels)
+
+# library(dplyr)
+# library(ggplot2)
+# visa=H_1B_FY14_Q4
+# case.status=visa %>% filter(!is.na(STATUS)) %>% group_by(STATUS) %>% summarise(PROPORTION=round(n()*100/nrow(visa),1))
+# 
+# 
+# print(ggplot(data = case.status, aes(x = reorder(STATUS, PROPORTION), y = PROPORTION, fill = STATUS)) +geom_bar(stat = "identity") + geom_text(aes(label = paste(PROPORTION,"%")), vjust=0,hjust = 1) + labs(x = "Case Status", y = "Percent", title = "Status of petitioned applications") + scale_y_continuous(breaks = seq(0,100,10)) + coord_flip())
+# 
+# employers=visa %>% group_by(LCA_CASE_EMPLOYER_NAME) %>% summarise(count=n(),percent=round(count*100/nrow(visa),5)) %>% arrange(desc(count))
+#            
+# p=ggplot(data = employers[1:10,], aes(x = reorder(LCA_CASE_EMPLOYER_NAME, percent), y = percent, fill = LCA_CASE_EMPLOYER_NAME)) +geom_bar(stat = "identity") + geom_text(aes(label = paste(percent,"%")), vjust=0,hjust = 1) + labs(x = "Company", y = "Percent", title = "Applications per company") + scale_y_continuous(breaks = seq(0,100,10)) + coord_flip()
+# 
+# p=p+theme(legend.position = "bottom") + guides(fill=guide_legend(nrow=5,byrow=TRUE))
+# print(p)
+# 
+# jobs=visa %>% group_by(LCA_CASE_JOB_TITLE) %>% summarise(count=n(),percent=round(count*100/nrow(visa),5)) %>% arrange(desc(count))
+# 
+# p=ggplot(data = jobs[1:10,], aes(x = reorder(LCA_CASE_JOB_TITLE, percent), y = percent, fill = LCA_CASE_JOB_TITLE)) +geom_bar(stat = "identity") + geom_text(aes(label = paste(percent,"%")), vjust=0,hjust = 1) + labs(x = "Job-title", y = "Percent", title = "Jobs") + scale_y_continuous(breaks = seq(0,100,10)) + coord_flip()
+# 
+# p=p+theme(legend.position = "bottom") + guides(fill=guide_legend(nrow=5,byrow=TRUE))
+# print(p)
+# 
+# fulltimeprop=prop.table(table(visa$FULL_TIME_POS))
+# 
+# nrow(visa[which(visa$STATUS=="DENIED" | visa$STATUS=="CERTIFIED-WITHDRAWN" | visa$STATUS=="DENIED" | visa$STATUS=="WITHDRAWN" | visa$STATUS=="REJECTED" | visa$STATUS=="INVALIDATED" ),])
+```
+
+#Cleaning data
+```{r}
+H1B.cleaning <- H1B.train
+
+#getting rid of visa status that aren't H-1B then removing VISA_CLASS variable
+levels(H1B.cleaning$VISA_CLASS)
+H1B.cleaning <- H1B.cleaning[! H1B.cleaning$VISA_CLASS %in% c("E-3 Australian", "H-1B1 Chile", "H-1B1 Singapore"),] 
+droplevels(H1B.cleaning$VISA_CLASS)
+
+#converting prevailing wage so they are all based on yearly wage
+summary(H1B.cleaning$PREVAILING_WAGE)
+levels(H1B.cleaning$PW_UNIT_OF_PAY)
+H1B.cleaning <- H1B.cleaning %>% mutate(PREVAILING_WAGE = case_when(PW_UNIT_OF_PAY == 'Hour' ~ PREVAILING_WAGE * 50 * 40, PW_UNIT_OF_PAY == 'Year' ~ PREVAILING_WAGE, PW_UNIT_OF_PAY == 'Week' ~ PREVAILING_WAGE * 50, PW_UNIT_OF_PAY == 'Bi-Weekly'~ PREVAILING_WAGE * 25))
+summary(H1B.cleaning$PREVAILING_WAGE)
+
+#converting wage rate of pay from to yearly base
+summary(H1B.cleaning$WAGE_RATE_OF_PAY_FROM)
+levels(H1B.cleaning$WAGE_UNIT_OF_PAY)
+H1B.cleaning <- H1B.cleaning %>% mutate(WAGE_RATE_OF_PAY_FROM = case_when(WAGE_UNIT_OF_PAY == 'Hour' ~ WAGE_RATE_OF_PAY_FROM * 50 * 40, WAGE_UNIT_OF_PAY == 'Year' ~ WAGE_RATE_OF_PAY_FROM, WAGE_UNIT_OF_PAY == 'Week' ~ WAGE_RATE_OF_PAY_FROM * 50, PW_UNIT_OF_PAY == 'Bi-Weekly'~ WAGE_RATE_OF_PAY_FROM * 25))
+summary(H1B.cleaning$WAGE_RATE_OF_PAY_FROM)
+
+#log transform wage variables
+H1B.cleaning$PREVAILING_WAGE <- log(H1B.cleaning$PREVAILING_WAGE)
+H1B.cleaning$WAGE_RATE_OF_PAY_FROM <- log(H1B.cleaning$WAGE_RATE_OF_PAY_FROM)
+
+#removing redundant/full of blanks/irrelevant based on variable descriptions/factors w/ large # of levels that I don't know how to minimize
+H1B.cleaning <- H1B.cleaning[-c(1,5,8:11,13:22,23,25:32,35,36,38,39,41:49,51,52)]
+str(H1B.cleaning)
+
+#selecting observations that are complete cases (removing NA's) 
+H1B.cleaning <- na.omit(H1B.cleaning)
+H1B.cleaning <- H1B.cleaning[complete.cases(H1B.cleaning),]
+
+#converting dates so they are stored as dates
+H1B.cleaning$CASE_SUBMITTED <- as.Date(H1B.cleaning$CASE_SUBMITTED, format = "%m/%d/%Y")
+H1B.cleaning$DECISION_DATE <- as.Date(H1B.cleaning$DECISION_DATE, format = "%m/%d/%Y")
+H1B.cleaning$EMPLOYMENT_START_DATE <- as.Date(H1B.cleaning$EMPLOYMENT_START_DATE, format = "%m/%d/%Y")
+H1B.cleaning$EMPLOYMENT_END_DATE <- as.Date(H1B.cleaning$EMPLOYMENT_END_DATE, format = "%m/%d/%Y")
+
+#creating new variables that measure the length it took to make a decision and  duration of employment
+H1B.cleaning$DECISION_DURATION <- (H1B.cleaning$DECISION_DATE - H1B.cleaning$CASE_SUBMITTED)
+H1B.cleaning$EMPLOYMENT_DURATION <- (H1B.cleaning$EMPLOYMENT_END_DATE - H1B.cleaning$EMPLOYMENT_START_DATE)
+
+#removing dates now that we have durations
+H1B.cleaning <- H1B.cleaning[,-(2:5)] 
+
+#creating new variables that measure the days between all the date values
+#not sure if necessary, so commented out for now.
+# H1B.cleaning$DECISION_TO_START_DURATION <- (H1B.cleaning$EMPLOYMENT_START_DATE - H1B.cleaning$DECISION_DATE)
+# H1B.cleaning$DECISION_TO_END_DURATION <- (H1B.cleaning$EMPLOYMENT_END_DATE - H1B.cleaning$DECISION_DATE)
+# H1B.cleaning$SUBMIT_TO_START_DURATION <- (H1B.cleaning$EMPLOYMENT_START_DATE - H1B.cleaning$CASE_SUBMITTED)
+# H1B.cleaning$SUBMIT_TO_END_DURATION <- (H1B.cleaning$EMPLOYMENT_END_DATE - H1B.cleaning$CASE_SUBMITTED)
+
+#converting durations into integers (not the durations that are commented out)
+H1B.cleaning$EMPLOYMENT_DURATION <- as.integer(H1B.cleaning$EMPLOYMENT_DURATION)
+H1B.cleaning$DECISION_DURATION <- as.integer(H1B.cleaning$DECISION_DURATION)
+
+#looking at # of levels in remaining variables 
+str(H1B.cleaning)
+lapply(H1B.cleaning, nlevels)
+
+#removing factor levels that are no longer used by restating each factor as a factor
+H1B.cleaning$EMPLOYER_STATE <- factor(H1B.cleaning$EMPLOYER_STATE) 
+H1B.cleaning$SOC_NAME <- factor(H1B.cleaning$SOC_NAME)
+H1B.cleaning$FULL_TIME_POSITION <- factor(H1B.cleaning$FULL_TIME_POSITION)
+H1B.cleaning$PW_SOURCE <- factor(H1B.cleaning$PW_SOURCE)
+H1B.cleaning$WORKSITE_STATE <- factor(H1B.cleaning$WORKSITE_STATE) 
+
+##converting SOC_NAME to 15 levels
+#keeping all SOC_NAMES that occur more than 50 times and grouping all others as OTHER
+H1B.cleaning2 <- H1B.cleaning #duplicate cleaning data frame
+H1B.cleaning2$SOC_NAME2 <- H1B.cleaning2$SOC_NAME #duplicate variable
+table1 <- table(H1B.cleaning2$SOC_NAME2) #frequency table
+table1
+less50 <-table1 < 50 #T if less than 50
+less50
+namesless50 <- names(which(less50)) #names that are less than 50
+ind <- which(H1B.cleaning$SOC_NAME %in% namesless50) #row #'s that are less than 50
+levels(H1B.cleaning2$SOC_NAME2) <- c(levels(H1B.cleaning2$SOC_NAME2), "OTHER") #creating new level OTHER
+levels(H1B.cleaning2$SOC_NAME2)
+H1B.cleaning2$SOC_NAME2[ind] <- "OTHER" #renaming observations as OTHER
+H1B.cleaning2$SOC_NAME2 <- factor(H1B.cleaning2$SOC_NAME2) #dropping levels that aren't used anymore
+levels(H1B.cleaning2$SOC_NAME2)
+H1B.cleaning2$SOC_NAME <- H1B.cleaning2$SOC_NAME2#replace SOC_NAME with SOC_NAME2 and then delete 
+H1B.cleaning2 <- H1B.cleaning2[,-11] #delete SOC_NAME2
+H1B.cleaning <- H1B.cleaning2 #replace H1B.cleaning with H1B.cleaning2
+
+#converting state levels into 7 regions 
+levels(H1B.cleaning$EMPLOYER_STATE) <- list("New England" = c("CT",	"ME",	"MA",	"NH",	"RI",	"VT"), "Mid-Atlantic" = c("DE",	"MD",	"NJ",	"NY",	"PA",	"DC"), "Midwest" = c("IL",	"IN",	"IA",	"KS",	"MI",	"MN",	"MO",	"NE",	"ND",	"OH",	"SD",	"WI"), "South" = c("AL",	"AR",	"FL",	"GA",	"KY",	"LA",	"MS",	"NC",	"SC",	"TN",	"VA",	"WV"), "Southwest" = c("AZ",	"NM",	"OK",	"TX"),  "West" = c("AK",	"CO",	"CA",	"HI",	"ID",	"MT",	"NV",	"OR",	"UT",	"WA",	"WY"), "US Territory" = c("GU",	"MP",	"PR",	"VI"))
+
+H1B.cleaning$EMPLOYER_STATE <- factor(H1B.cleaning$EMPLOYER_STATE) #dropping levels that aren't used anymore
+
+levels(H1B.cleaning$WORKSITE_STATE) <- list("New England" = c("CT",	"ME",	"MA",	"NH",	"RI",	"VT"), "Mid-Atlantic" = c("DE",	"MD",	"NJ",	"NY",	"PA",	"DC"), "Midwest" = c("IL",	"IN",	"IA",	"KS",	"MI",	"MN",	"MO",	"NE",	"ND",	"OH",	"SD",	"WI"), "South" = c("AL",	"AR",	"FL",	"GA",	"KY",	"LA",	"MS",	"NC",	"SC",	"TN",	"VA",	"WV"), "Southwest" = c("AZ",	"NM",	"OK",	"TX"),  "West" = c("AK",	"CO",	"CA",	"HI",	"ID",	"MT",	"NV",	"OR",	"UT",	"WA",	"WY"), "US Territory" = c("GU",	"MP",	"PR",	"VI"))
+
+H1B.cleaning$WORKSITE_STATE <- factor(H1B.cleaning$WORKSITE_STATE) #dropping levels that aren't used anymore
+
+str(H1B.cleaning)
+
+#removing Full_Time_Position b/c it became redundant after only considering yearly salary #keeping variable b/c we converted wage
+#H1B.cleaning <- H1B.cleaning[,-4] 
+
+H1B.clean <- H1B.cleaning
+write.csv(H1B.clean, file = "H1B.clean.csv")
+
+```
+
+#adding back in employment type variable(combination of 6 variable that were manipulated and concatenated in excel)
+#WILL CALL THIS CLEANING 3, AND WILL CLEAN BE REDOING ALL THE CLEANING BUT NOW WITH NEW VARIABLE INCLUDED
+```{r}
+H1B.cleaning3 <- H1B.train #duplicate cleaning dataframe
+str(H1B.cleaning3)
+
+#adding in new variable from imported data frame
+EMPLOYMENT_TYPE <- read.csv("EMPLOYMENT_TYPE_VARIABLE.csv", header = T,  na.strings=c("","NA")) #importing csv that holds new variable
+EMPLOYMENT_TYPE <- EMPLOYMENT_TYPE[,2]
+EMPLOYMENT_TYPE
+table(EMPLOYMENT_TYPE)
+EMPLOYMENT_TYPE <- factor(EMPLOYMENT_TYPE, levels = c("Amend Petition", "Change Employer", "Change Previous Employment", "Continued employment", "New Concurrent Employment", "New employment"))
+H1B.cleaning3$EMPLOYMENT_TYPE <- EMPLOYMENT_TYPE 
+levels(H1B.cleaning3$EMPLOYMENT_TYPE)
+
+
+#getting rid of visa status that aren't H-1B then removing VISA_CLASS variable
+levels(H1B.cleaning3$VISA_CLASS)
+H1B.cleaning3 <- H1B.cleaning3[! H1B.cleaning3$VISA_CLASS %in% c("E-3 Australian", "H-1B1 Chile", "H-1B1 Singapore"),] 
+H1B.cleaning3$VISA_CLASS <- factor(H1B.cleaning3$VISA_CLASS)
+
+#converting prevailing wage so they are all based on yearly wage
+summary(H1B.cleaning3$PREVAILING_WAGE)
+levels(H1B.cleaning3$PW_UNIT_OF_PAY)
+H1B.cleaning3 <- H1B.cleaning3 %>% mutate(PREVAILING_WAGE = case_when(PW_UNIT_OF_PAY == 'Hour' ~ PREVAILING_WAGE * 50 * 40, PW_UNIT_OF_PAY == 'Year' ~ PREVAILING_WAGE, PW_UNIT_OF_PAY == 'Week' ~ PREVAILING_WAGE * 50, PW_UNIT_OF_PAY == 'Bi-Weekly'~ PREVAILING_WAGE * 25))
+summary(H1B.cleaning3$PREVAILING_WAGE)
+
+#converting wage rate of pay from to yearly base
+summary(H1B.cleaning3$WAGE_RATE_OF_PAY_FROM)
+levels(H1B.cleaning3$WAGE_UNIT_OF_PAY)
+H1B.cleaning3 <- H1B.cleaning3 %>% mutate(WAGE_RATE_OF_PAY_FROM = case_when(WAGE_UNIT_OF_PAY == 'Hour' ~ WAGE_RATE_OF_PAY_FROM * 50 * 40, WAGE_UNIT_OF_PAY == 'Year' ~ WAGE_RATE_OF_PAY_FROM, WAGE_UNIT_OF_PAY == 'Week' ~ WAGE_RATE_OF_PAY_FROM * 50, PW_UNIT_OF_PAY == 'Bi-Weekly'~ WAGE_RATE_OF_PAY_FROM * 25))
+summary(H1B.cleaning3$WAGE_RATE_OF_PAY_FROM)
+
+#log transform wage variables
+#H1B.cleaning3$PREVAILING_WAGE <- log(H1B.cleaning3$PREVAILING_WAGE)
+#H1B.cleaning3$WAGE_RATE_OF_PAY_FROM <- log(H1B.cleaning3$WAGE_RATE_OF_PAY_FROM)
+
+#converting dates so they are stored as dates
+H1B.cleaning3$CASE_SUBMITTED <- as.Date(H1B.cleaning3$CASE_SUBMITTED, format = "%m/%d/%Y")
+H1B.cleaning3$DECISION_DATE <- as.Date(H1B.cleaning3$DECISION_DATE, format = "%m/%d/%Y")
+H1B.cleaning3$EMPLOYMENT_START_DATE <- as.Date(H1B.cleaning3$EMPLOYMENT_START_DATE, format = "%m/%d/%Y")
+H1B.cleaning3$EMPLOYMENT_END_DATE <- as.Date(H1B.cleaning3$EMPLOYMENT_END_DATE, format = "%m/%d/%Y")
+
+#creating new variables that measure the length it took to make a decision and  duration of employment
+H1B.cleaning3$DECISION_DURATION <- (H1B.cleaning3$DECISION_DATE - H1B.cleaning3$CASE_SUBMITTED)
+H1B.cleaning3$EMPLOYMENT_DURATION <- (H1B.cleaning3$EMPLOYMENT_END_DATE - H1B.cleaning3$EMPLOYMENT_START_DATE)
+
+#converting durations into integers (not the durations that are commented out)
+H1B.cleaning3$EMPLOYMENT_DURATION <- as.integer(H1B.cleaning3$EMPLOYMENT_DURATION)
+H1B.cleaning3$DECISION_DURATION <- as.integer(H1B.cleaning3$DECISION_DURATION)
+
+#removing redundant/full of blanks/irrelevant based on variable descriptions/factors w/ large # of levels that I don't know how to minimize
+names(H1B.cleaning3)
+H1B.cleaning3 <- H1B.cleaning3[, -c(1,3:11,13:23,25:32,35:36,38:39,41:42,45:49,51:52)]
+
+#removing NA's
+H1B.cleaning3 <- na.omit(H1B.cleaning3)
+
+str(H1B.cleaning3)
+
+#looking at # of levels in remaining variables 
+str(H1B.cleaning3)
+lapply(H1B.cleaning3, nlevels)
+
+#removing factor levels that are no longer used by restating each factor as a factor
+H1B.cleaning3$EMPLOYER_STATE <- factor(H1B.cleaning3$EMPLOYER_STATE) 
+H1B.cleaning3$SOC_NAME <- factor(H1B.cleaning3$SOC_NAME)
+H1B.cleaning3$FULL_TIME_POSITION <- factor(H1B.cleaning3$FULL_TIME_POSITION)
+H1B.cleaning3$PW_SOURCE <- factor(H1B.cleaning3$PW_SOURCE)
+H1B.cleaning3$WORKSITE_STATE <- factor(H1B.cleaning3$WORKSITE_STATE) 
+H1B.cleaning3$PW_SOURCE <- factor(H1B.cleaning3$PW_SOURCE)
+
+##converting SOC_NAME to 15 levels
+#keeping all SOC_NAMES that occur more than 50 times and grouping all others as OTHER
+table1 <- table(H1B.cleaning3$SOC_NAME) #frequency table
+table1
+less50 <-table1 < 50 #T if less than 50
+less50
+namesless50 <- names(which(less50)) #names that are less than 50
+ind <- which(H1B.cleaning3$SOC_NAME %in% namesless50) #row #'s that are less than 50
+levels(H1B.cleaning3$SOC_NAME) <- c(levels(H1B.cleaning3$SOC_NAME), "OTHER") #creating new level OTHER
+levels(H1B.cleaning3$SOC_NAME)
+H1B.cleaning3$SOC_NAME[ind] <- "OTHER" #renaming observations as OTHER
+H1B.cleaning3$SOC_NAME <- factor(H1B.cleaning3$SOC_NAME) #dropping levels that aren't used anymore
+levels(H1B.cleaning3$SOC_NAME)
+
+
+# H1B.cleaning2$SOC_NAME <- H1B.cleaning2$SOC_NAME2#replace SOC_NAME with SOC_NAME2 and then delete 
+# H1B.cleaning2 <- H1B.cleaning2[,-11] #delete SOC_NAME2
+# H1B.cleaning <- H1B.cleaning2 #replace H1B.cleaning with H1B.cleaning2
+
+#converting state levels into 7 regions 
+levels(H1B.cleaning3$EMPLOYER_STATE) <- list("New England" = c("CT",	"ME",	"MA",	"NH",	"RI",	"VT"), "Mid-Atlantic" = c("DE",	"MD",	"NJ",	"NY",	"PA",	"DC"), "Midwest" = c("IL",	"IN",	"IA",	"KS",	"MI",	"MN",	"MO",	"NE",	"ND",	"OH",	"SD",	"WI"), "South" = c("AL",	"AR",	"FL",	"GA",	"KY",	"LA",	"MS",	"NC",	"SC",	"TN",	"VA",	"WV"), "Southwest" = c("AZ",	"NM",	"OK",	"TX"),  "West" = c("AK",	"CO",	"CA",	"HI",	"ID",	"MT",	"NV",	"OR",	"UT",	"WA",	"WY"), "US Territory" = c("GU",	"MP",	"PR",	"VI"))
+
+H1B.cleaning3$EMPLOYER_STATE <- factor(H1B.cleaning3$EMPLOYER_STATE) #dropping levels that aren't used anymore
+
+levels(H1B.cleaning3$WORKSITE_STATE) <- list("New England" = c("CT",	"ME",	"MA",	"NH",	"RI",	"VT"), "Mid-Atlantic" = c("DE",	"MD",	"NJ",	"NY",	"PA",	"DC"), "Midwest" = c("IL",	"IN",	"IA",	"KS",	"MI",	"MN",	"MO",	"NE",	"ND",	"OH",	"SD",	"WI"), "South" = c("AL",	"AR",	"FL",	"GA",	"KY",	"LA",	"MS",	"NC",	"SC",	"TN",	"VA",	"WV"), "Southwest" = c("AZ",	"NM",	"OK",	"TX"),  "West" = c("AK",	"CO",	"CA",	"HI",	"ID",	"MT",	"NV",	"OR",	"UT",	"WA",	"WY"), "US Territory" = c("GU",	"MP",	"PR",	"VI"))
+
+H1B.cleaning3$WORKSITE_STATE <- factor(H1B.cleaning3$WORKSITE_STATE) #dropping levels that aren't used anymore
+str(H1B.cleaning3)
+
+```
+
+
+
+#Adding new variables we created to H1B.test data
+```{r}
+#converting dates so they are stored as dates
+H1B.test$CASE_SUBMITTED <- as.Date(H1B.test$CASE_SUBMITTED, format = "%m/%d/%Y")
+H1B.test$DECISION_DATE <- as.Date(H1B.test$DECISION_DATE, format = "%m/%d/%Y")
+H1B.test$EMPLOYMENT_START_DATE <- as.Date(H1B.test$EMPLOYMENT_START_DATE, format = "%m/%d/%Y")
+H1B.test$EMPLOYMENT_END_DATE <- as.Date(H1B.test$EMPLOYMENT_END_DATE, format = "%m/%d/%Y")
+
+#creating new variables that measure the length it took to make a decision and  duration of employment
+H1B.test$DECISION_DURATION <- (H1B.test$DECISION_DATE - H1B.test$CASE_SUBMITTED)
+H1B.test$EMPLOYMENT_DURATION <- (H1B.test$EMPLOYMENT_END_DATE - H1B.test$EMPLOYMENT_START_DATE)
+
+#converting durations into integers (not the durations that are commented out)
+H1B.test$EMPLOYMENT_DURATION <- as.integer(H1B.test$EMPLOYMENT_DURATION)
+H1B.test$DECISION_DURATION <- as.integer(H1B.test$DECISION_DURATION)
+
+#adding in new variable from imported data frame
+EMPLOYMENT_TYPE.test <- read.csv("EMPLOYMENT_TYPE_VARIABLE.test.csv", header = T,  na.strings=c("","NA")) #importing csv that holds new variable
+EMPLOYMENT_TYPE.test <- EMPLOYMENT_TYPE.test[,2]
+EMPLOYMENT_TYPE.test
+table(EMPLOYMENT_TYPE.test)
+EMPLOYMENT_TYPE.test <- factor(EMPLOYMENT_TYPE.test, levels = c("Amend Petition", "Change Employer", "Change Previous Employment", "Continued employment", "New Concurrent Employment", "New employment"))
+H1B.test$EMPLOYMENT_TYPE.test <- EMPLOYMENT_TYPE.test
+levels(H1B.test$EMPLOYMENT_TYPE.test)
+```
+
+#Seperate cleaned data into training and testing
+```{r}
+set.seed(91)
+train.index <- sample(1:nrow(H1B.clean), nrow(H1B.clean)*.90) #sampling 90% of HB1 training data
+train <- H1B.clean[train.index, ] #90% of HB1 set to train
+test.train <- H1B.clean[-train.index, ] #10% of HB1 set to test
+```
+
+#Seperate cleaned data into training and testing using clean3 data
+```{r}
+set.seed(91)
+train.index3 <- sample(1:nrow(H1B.cleaning3), nrow(H1B.cleaning3)*.90) #sampling 90% of HB1 training data
+train3 <- H1B.cleaning3[train.index3, ] #90% of HB1 set to train
+test.train3 <- H1B.cleaning3[-train.index3, ] #10% of HB1 set to test
+```
+
+#Logistic Regression w/ backwards stepwise
+```{r}
+str(train)
+names(train)
+glm.fit <- glm(CASE_STATUS ~ ., family = "binomial", data = train)
+summary(glm.fit)
+bAIC.logit.model <- step(glm.fit, direction = "backward")
+bAIC.logit.pred <- predict(bAIC.logit.model, test.train, type = "terms")
+bAIC.logit.pred
+```
+
+#Logistic Regression w/ backwards stepwise using clean3 data then using k-fold
+```{r}
+str(train3)
+
+names(train3)
+names(train3)
+glm.fit3 <- glm(CASE_STATUS ~ ., family = "binomial", data = train3)
+summary(glm.fit3)
+train_MSE3 <- mean(glm.fit3$residuals ^ 2)
+train_MSE3
+
+bAIC.logit.model <- step(glm.fit3, direction = "backward")
+bAIC.logit.pred3 <- predict(bAIC.logit.model, test.train3, type = "response")
+
+bAIC.logit.pred3
+
+#kfold
+set.seed(17)
+cv.error.10 = rep(0,10)
+for(i in 1:12){
+glm.fit3.kfold <- glm(CASE_STATUS ~ poly(EMPLOYER_STATE, SOC_NAME, FULL_TIME_POSITION,PREVAILING_WAGE, PW_SOURCE,WAGE_RATE_OF_PAY_FROM, H1B_DEPENDENT,WILLFUL_VIOLATOR, WORKSITE_STATE,EMPLOYMENT_TYPE, DECISION_DURATION,EMPLOYMENT_DURATION, i), data = train3)
+cv.error.10[i] <- cv.glm(train3, glm.fit3.kfold, K=10)$delta[1]
+}
+
+
+glm.fit3.pred <- predict(glm.fit3.kfold, data=test.train3)
+
+
+levels(train3$PW_SOURCE)
+str(train3)
+```
+
+#LDA w/ clean 3
+```{r}
+nlevels(H1B.cleaning3$CASE_STATUS)
+nlevels(H1B.cleaning3$CASE_STATUS)
+#model
+lda.fit3 <- lda(CASE_STATUS ~., data = H1B.cleaning3)
+lda.fit3
+#predict
+lda.fit3.pred <- predict(lda.fit3, data= H1B.cleaning3[-1,])$class
+#table
+table(lda.fit3.pred, H1B.cleaning3$CASE_STATUS)
+
+#leave one out cross validate
+lda.fit3.loocv <- lda(CASE_STATUS ~., data = H1B.cleaning3, CV= T)$class
+table(lda.fit3.loocv, H1B.cleaning3$CASE_STATUS)
+
+#kfold cross validate
+
+
+
+```
+
+#Tree
+```{r}
+#Fitting Classification Trees
+dim(train)
+head(train)
+
+#tree model
+tree.train <-tree(CASE_STATUS~.,train) 
+summary(tree.train)
+plot(tree.train); text(tree.train,pretty=0)
+tree.train
+CASE_STATUS.TEST <- test.train$CASE_STATUS
+#tree model prediction
+tree.pred <- predict(tree.train, test.train,type="class")
+table(tree.pred, CASE_STATUS.TEST)
+# accuracy :
+(189+91)/(189+19+9+91)
+
+#tree model cross validation
+set.seed(3)
+cv.tree.train <- cv.tree(tree.train,FUN=prune.misclass)
+names(cv.tree.train)
+cv.tree.train
+
+par(mfrow=c(1,2))
+plot(cv.tree.train$size,cv.tree.train$dev,type="b")
+plot(cv.tree.train$k,cv.tree.train$dev,type="b") #doesn't look like we need to prune b/c 5 is the best 
+
+tree.pred.kaggle <- predict(tree.train, H1B.test, type = "class")
+tree.pred.kaggle
+tree.prediction1 <- data.frame("CASE_STATUS" = tree.pred.kaggle)
+names(H1B.clean)
+
+write.csv(tree.prediction1, file="tree.prediction1.csv") #UPLOADED TO KAGGLE W/ 87.4% ACCURACY ON 7/29
+```
+
+#Tree using clean3 data
+```{r}
+#Fitting Classification Trees
+dim(train3)
+head(train3)
+
+#tree model
+tree.train3 <-tree(CASE_STATUS~.,train3) 
+summary(tree.train3)
+plot(tree.train3); text(tree.train3,pretty=0)
+tree.train3
+CASE_STATUS.TEST3 <- test.train3$CASE_STATUS
+#tree model prediction
+tree.pred3 <- predict(tree.train3, test.train3,type="class")
+table(tree.pred3, CASE_STATUS.TEST3)
+# accuracy :
+(189+91)/(189+19+9+91)
+
+#tree model cross validation
+set.seed(3)
+cv.tree.train <- cv.tree(tree.train,FUN=prune.misclass)
+names(cv.tree.train)
+cv.tree.train
+
+par(mfrow=c(1,2))
+plot(cv.tree.train$size,cv.tree.train$dev,type="b")
+plot(cv.tree.train$k,cv.tree.train$dev,type="b") #doesn't look like we need to prune b/c 5 is the best 
+
+tree.pred.kaggle <- predict(tree.train, H1B.test, type = "class")
+tree.pred.kaggle
+tree.prediction1 <- data.frame("CASE_STATUS" = tree.pred.kaggle)
+names(H1B.clean)
+
+write.csv(tree.prediction1, file="tree.prediction1.csv") #UPLOADED TO KAGGLE W/ 87.4% ACCURACY ON 7/29
+```
+
+#Random Forest
+```{r}
+train.rf <-randomForest(CASE_STATUS~., data = train)
+
+test.rf <- predict(train.rf,test)
+confusionMatrix(test.rf,test$CASE_STATUS)
+```
+
+#PCA
+```{r}
+install.packages("pls")
+library(pls)
+
+head(train)
+
+d.new <- d
+d.new[, 2:6] <- log(d[2:6], 2)
+d.new
+
+#log transform wage variables
+train.logt <- train
+
+train.logt[ , c(5,7)] <- log(train.log)
+```
