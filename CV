@@ -1,0 +1,9 @@
+library(caret)
+
+model <- train(Case_Status~., data=
+                 method= "lda",
+               trcontrol = traincontrol(
+                 method = "cv", number=10,
+                 verboseIter = TRUE
+               )
+               )
