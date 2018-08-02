@@ -26,14 +26,14 @@ H1B$EMPLOYMENT_TIME=abs(H1B$EMPLOYMENT_END_DATE-H1B$EMPLOYMENT_START_DATE)
 
 H1B <- H1B %>%
     select(c ("CASE_STATUS",
-             "DECISION_TIME",
+              "DECISION_TIME",
              "EMPLOYMENT_TIME",
              "AGENT_REPRESENTING_EMPLOYER",
              "PREVAILING_WAGE",
-             "PW_SOURCE",
+             
              "PW_WAGE_LEVEL",
-             "H1B_DEPENDENT",
-             "WORKSITE_STATE",
+             
+             
              "FULL_TIME_POSITION"))
 
 H1B<-H1B[!(H1B$WORKSITE_STATE == "" | 
@@ -80,10 +80,10 @@ H1B_Trial$H1B_DEPENDENT<-droplevels(H1B_Trial$H1B_DEPENDENT)
 H1B_Trial$FULL_TIME_POSITION <- as.factor(H1B_Trial$FULL_TIME_POSITION)
 H1B_Trial$FULL_TIME_POSITION<-droplevels(H1B_Trial$FULL_TIME_POSITION)
 
-smp_size <- floor(0.7 * nrow(H1B_Trial))
+smp_size <- floor(0.7* nrow(H1B_Trial))
 
 
-set.seed(222)
+set.seed(1)
 H1B_Trial_Ind <- sample(seq_len(nrow(H1B_Trial)), size = smp_size)
 
 train <- H1B_Trial[H1B_Trial_Ind, ]
@@ -101,7 +101,7 @@ levels(test$FULL_TIME_POSITION)<- levels(train$FULL_TIME_POSITION)
 train=train[complete.cases(train),]
 test=test[complete.cases(test),]
 
-#RandomForest (86%)
+#RandomForest (87.87%)
 train.rf<-randomForest(CASE_STATUS~., data = train)
 test.rf= predict(train.rf,test)
 confusionMatrix(test.rf,test$CASE_STATUS)
@@ -112,18 +112,18 @@ confusionMatrix(test.rf,test$CASE_STATUS)
 glm.train <- glm(CASE_STATUS~.,data=train, family=binomial)
 glm.test <-predict(glm.train, newdata= test, type="response")
 glm.pred=rep ("Denied " ,1412)
-glm.pred[glm.test >.4]=" Certified"
+glm.pred[glm.test >.5]=" Certified"
 summary(glm.pred)
 table(glm.pred,test$CASE_STATUS)
 #END OF GLM
 
 #LDA(Needs Work)
-lda.train=lda(CASE_STATUS~., data=train)
+#lda.train=lda(CASE_STATUS~., data=train)
 
-library(tree
-        )
-#TREE (89%)
-tree.train =tree(CASE_STATUS~. -WORKSITE_STATE,train )
+#TREE (87.4%)
+library(tree)
+
+tree.train =tree(CASE_STATUS~. ,train )
 tree.test <- predict(tree.train, test, type="class")
 table(tree.test,test$CASE_STATUS)
 
@@ -158,10 +158,10 @@ final <- final %>%
             "EMPLOYMENT_TIME",
             "AGENT_REPRESENTING_EMPLOYER",
             "PREVAILING_WAGE",
-            "PW_SOURCE",
+            
             "PW_WAGE_LEVEL",
-            "H1B_DEPENDENT",
-            "WORKSITE_STATE",
+           
+           
             "FULL_TIME_POSITION"))
 
 #final<-final[!(final$WORKSITE_STATE == "" | 
@@ -179,8 +179,8 @@ final$DECISION_TIME=as.integer(final$DECISION_TIME)
 final$EMPLOYMENT_TIME=as.integer(final$EMPLOYMENT_TIME)
 
 
-final <- final %>%
-  na.omit(final) 
+#final <- final %>%
+ # na.omit(final) 
 
 
 final$PREVAILING_WAGE<-as.numeric(final$PREVAILING_WAGE)
@@ -212,3 +212,8 @@ summary(tree.final)
 write.csv(tree.final, "tree.final.csv")
 
 rf.final= predict(train.rf,final)
+summary(rf.final
+        )
+write.csv(rf.final, "rf.final.csv")
+
+plot(rf.final)
